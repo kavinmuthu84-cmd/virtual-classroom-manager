@@ -1,0 +1,229 @@
+import java.util.*;
+import java.util.logging.*;
+
+
+public class VirtualClassroomManager {
+    private static final Logger logger = Logger.getLogger(VirtualClassroomManager.class.getName());
+    private final Map<String, Classroom> classrooms = new HashMap<>();
+    private final Map<String, Student> students = new HashMap<>();
+
+    public static void main(String[] args) {
+        setupLogging();
+        new VirtualClassroomManager().run();
+    }
+
+    private static void setupLogging() {
+        Logger rootLogger = Logger.getLogger("");
+        Handler consoleHandler = new ConsoleHandler();
+        consoleHandler.setLevel(Level.INFO);
+        rootLogger.setLevel(Level.INFO);
+        rootLogger.addHandler(consoleHandler);
+    }
+
+    private void run() {
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("Welcome to Virtual Classroom Manager!");
+        while (true) {
+            System.out.print("> ");
+            String input = scanner.nextLine().trim();
+            if (input.isEmpty()) continue;
+            String[] tokens = input.split("\\s+", 2);
+            String command = tokens[0];
+            String args = tokens.length > 1 ? tokens[1] : "";
+            try {
+                switch (command) {
+                    case "add_classroom":
+                        addClassroom(args);
+                        break;
+                    case "add_student":
+                        addStudent(args);
+                        break;
+                    case "schedule_assignment":
+                        scheduleAssignment(args);
+                        break;
+                    case "submit_assignment":
+                        submitAssignment(args);
+                        break;
+                    case "list_classrooms":
+                        listClassrooms();
+                        break;
+                    case "list_students":
+                        listStudents(args);
+                        break;
+                    case "remove_classroom":
+                        removeClassroom(args);
+                        break;
+                    case "exit":
+                        System.out.println("Exiting Virtual Classroom Manager.");
+                        return;
+                    default:
+                        System.out.println("Unknown command.");
+                }
+            } catch (TransientException te) {
+                logger.warning("Transient error: " + te.getMessage() + ", retrying...");
+                // Can implement retry logic here if needed
+            } catch (Exception e) {
+                logger.severe(e.getMessage());
+                System.out.println("Error: " + e.getMessage());
+            }
+        }
+    }
+
+    /** Command Implementations **/
+
+    private void addClassroom(String arg) {
+        String name = arg.trim();
+        if (name.isEmpty()) throw new IllegalArgumentException("Classroom name required.");
+        if (classrooms.containsKey(name)) throw new IllegalArgumentException("Classroom " + name + " already exists.");
+        classrooms.put(name, new Classroom(name));
+        logger.info("Classroom " + name + " has been created.");
+        System.out.println("Classroom " + name + " has been created.");
+    }
+
+    private void removeClassroom(String arg) {
+        String name = arg.trim();
+        if (!classrooms.containsKey(name)) throw new IllegalArgumentException("Classroom " + name + " does not exist.");
+        classrooms.remove(name);
+        logger.info("Classroom " + name + " has been removed.");
+        System.out.println("Classroom " + name + " has been removed.");
+    }
+
+    private void addStudent(String arg) {
+        String[] parts = arg.trim().split("\\s+");
+        if (parts.length != 2) throw new IllegalArgumentException("Usage: add_student <student_id> <class_name>");
+        String id = parts[0], className = parts[1];
+        Classroom classroom = getClassroomOrThrow(className);
+        Student student = students.computeIfAbsent(id, Student::new);
+        classroom.addStudent(student);
+        logger.info("Student " + id + " has been enrolled in " + className + ".");
+        System.out.println("Student " + id + " has been enrolled in " + className + ".");
+    }
+
+    private void scheduleAssignment(String arg) {
+        String[] parts = arg.trim().split("\\s+", 2);
+        if (parts.length != 2) throw new IllegalArgumentException("Usage: schedule_assignment <class_name> <assignment_details>");
+        String className = parts[0], details = parts[1];
+        Classroom classroom = getClassroomOrThrow(className);
+        classroom.scheduleAssignment(details);
+        logger.info("Assignment for " + className + " has been scheduled.");
+        System.out.println("Assignment for " + className + " has been scheduled.");
+    }
+
+    private void submitAssignment(String arg) {
+        String[] parts = arg.trim().split("\\s+", 3);
+        if (parts.length != 3) throw new IllegalArgumentException("Usage: submit_assignment <student_id> <class_name> <assignment_details>");
+        String studentId = parts[0], className = parts[1], details = parts[2];
+        Classroom classroom = getClassroomOrThrow(className);
+        Student student = getStudentOrThrow(studentId);
+        classroom.submitAssignment(student, details);
+        logger.info("Assignment submitted by Student " + studentId + " in " + className + ".");
+        System.out.println("Assignment submitted by Student " + studentId + " in " + className + ".");
+    }
+
+    private void listClassrooms() {
+        if (classrooms.isEmpty()) {
+            System.out.println("No classrooms available.");
+            return;
+        }
+        System.out.println("Classrooms:");
+        for (String name : classrooms.keySet()) {
+            System.out.println(" - " + name);
+        }
+    }
+
+    private void listStudents(String arg) {
+        String className = arg.trim();
+        Classroom classroom = getClassroomOrThrow(className);
+        Set<Student> studentSet = classroom.getStudents();
+        if (studentSet.isEmpty()) {
+            System.out.println("No students in " + className + ".");
+            return;
+        }
+        System.out.println("Students in " + className + ":");
+        for (Student s : studentSet) {
+            System.out.println(" - " + s.getId());
+        }
+    }
+
+    private Classroom getClassroomOrThrow(String name) {
+        Classroom c = classrooms.get(name);
+        if (c == null) throw new IllegalArgumentException("Classroom " + name + " does not exist.");
+        return c;
+    }
+
+    private Student getStudentOrThrow(String id) {
+        Student s = students.get(id);
+        if (s == null) throw new IllegalArgumentException("Student " + id + " does not exist.");
+        return s;
+    }
+
+    /** DOMAIN CLASSES **/
+
+    private static class Classroom {
+        private final String name;
+        private final Set<Student> students = new HashSet<>();
+        private final List<Assignment> assignments = new ArrayList<>();
+
+        Classroom(String name) { this.name = name; }
+
+        void addStudent(Student student) {
+            students.add(student);
+            student.enrollInClass(name);
+        }
+
+        void scheduleAssignment(String details) {
+            assignments.add(new Assignment(details));
+        }
+
+        void submitAssignment(Student student, String assignmentDetails) {
+            Optional<Assignment> a = assignments.stream()
+                    .filter(asg -> asg.getDetails().equals(assignmentDetails))
+                    .findFirst();
+            Assignment assignment = a.orElseGet(() -> {
+                Assignment newAsg = new Assignment(assignmentDetails);
+                assignments.add(newAsg);
+                return newAsg;
+            });
+            assignment.submit(student);
+            student.submitAssignment(name, assignmentDetails);
+        }
+
+        Set<Student> getStudents() {
+            return Collections.unmodifiableSet(students);
+        }
+    }
+
+    private static class Student {
+        private final String id;
+        private final Map<String, Set<String>> submissions = new HashMap<>(); // className -> submitted assignments
+
+        Student(String id) { this.id = id; }
+
+        String getId() { return id; }
+
+        void enrollInClass(String className) {
+            submissions.putIfAbsent(className, new HashSet<>());
+        }
+
+        void submitAssignment(String className, String assignmentDetails) {
+            submissions.computeIfAbsent(className, k -> new HashSet<>()).add(assignmentDetails);
+        }
+    }
+
+    private static class Assignment {
+        private final String details;
+        private final Set<String> submittedStudentIds = new HashSet<>();
+
+        Assignment(String details) { this.details = details; }
+
+        String getDetails() { return details; }
+
+        void submit(Student student) {
+            submittedStudentIds.add(student.getId());
+        }
+    }
+
+    private static class TransientException extends RuntimeException {
+        TransientException(String msg) { super(msg); }
+    }
+}
